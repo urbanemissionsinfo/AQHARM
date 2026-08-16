@@ -405,8 +405,8 @@ function fmtInt(n){
 function fmtMoney(n, symbol){
   if(!isFinite(n)) n = 0;
   let out;
-  if(Math.abs(n) >= 1e9) out = (n/1e9).toFixed(2)+"B";
-  else if(Math.abs(n) >= 1e6) out = (n/1e6).toFixed(2)+"M";
+  if(Math.abs(n) >= 1e9) out = (n/1e9).toFixed(1)+"B";
+  else if(Math.abs(n) >= 1e6) out = Math.round(n/1e6)+"M";
   else out = Math.round(n).toLocaleString('en-US');
   return symbol + out;
 }
@@ -426,7 +426,7 @@ function buildRows(){
       </td>
       <td class="cost-cell">
         <div class="cost-row-top">
-          <span class="currency-sym" id="costSym-${i}">$</span>
+          <span class="currency-sym">$</span>
           <input type="number" class="cost-num" data-idx="${i}" data-field="costnum" value="${eff.cost}" min="0" step="1">
         </div>
         <input type="range" class="cost-slider" data-idx="${i}" data-field="costslider" min="0" max="${eff.sliderMax}" step="${Math.max(1, Math.round(eff.sliderMax/500))}" value="${eff.cost}">
@@ -466,15 +466,6 @@ function buildRows(){
   });
 }
 
-function updateCurrencySymbols(){
-  const code = currencySelect.value;
-  const symbol = CURRENCY[code].symbol;
-  EFFECTS.forEach((_, i)=>{
-    const el = document.getElementById(`costSym-${i}`);
-    if(el) el.textContent = symbol;
-  });
-}
-
 function calculate(){
   const pm25 = parseFloat(pm25Input.value) || 0;
   const pop = parseFloat(popInput.value) || 0;
@@ -490,7 +481,7 @@ function calculate(){
     const impact = pop * pm25 * eff.drf;
     const costUSD = impact * eff.cost;
     document.getElementById(`impact-${i}`).textContent = fmtInt(impact);
-    document.getElementById(`cost-${i}`).textContent = fmtMoney(costUSD * rate, symbol);
+    document.getElementById(`cost-${i}`).textContent = fmtMoney(costUSD, '$');
     if(eff.isMortality){
       mortalityCases += impact;
       mortalityCostUSD += costUSD;
@@ -519,7 +510,6 @@ currencySelect.addEventListener('change', ()=>{
   const code = currencySelect.value;
   fxRateInput.value = CURRENCY[code].rate;
   fxCodeSpan.textContent = code;
-  updateCurrencySymbols();
   calculate();
 });
 fxRateInput.addEventListener('input', calculate);
@@ -530,14 +520,12 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
     EFFECTS[i].cost = d.cost;
   });
   buildRows();
-  updateCurrencySymbols();
   calculate();
 });
 
 buildRows();
 fxRateInput.value = CURRENCY[currencySelect.value].rate;
 fxCodeSpan.textContent = currencySelect.value;
-updateCurrencySymbols();
 calculate();
 </script>
 
