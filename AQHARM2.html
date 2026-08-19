@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gridded AQ-HARM · Spatial Health Impacts</title>
+  
+  <!-- Fonts[cite: 2] -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet & Draw CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+  
+  <link rel="stylesheet" href="style_grid.css"/>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap header-wrap">
+    <div>
+      <div class="brand-mark">Urban Emissions Info</div> <!--[cite: 2] -->
+      <h1>Gridded AQ-HARM</h1>
+      <p>Draw a bounding box to estimate spatially distributed premature mortality and economic costs based on gridded PM2.5 exposure and LandScan population data.</p>
+      <span class="model-badge">GEMM mortality model · Burnett et al. 2018</span> <!--[cite: 2] -->
+    </div>
+  </div>
+</header>
+
+<div class="app-container">
+  
+  <!-- LEFT: SIDEBAR CONTROLS & RESULTS -->
+  <aside class="sidebar">
+    
+    <!-- Layers & AOI Panel -->
+    <div class="panel">
+    <div class="panel-title">1. Map Layers & Area</div>
+    
+    <div class="button-group">
+        <button id="btn-population" class="btn-toggle" disabled>Loading Pop...</button>
+        <button id="btn-pm25" class="btn-toggle" disabled>Loading PM2.5...</button>
+    </div>
+
+    <div id="raster-legend" class="raster-legend hidden"></div>
+
+    <div class="aoi-controls">
+        <button id="drawRectBtn" class="btn-action">⛶ Draw Bounding Box</button>
+        <button id="btn-clear-box" class="btn-action btn-danger hidden">✕ Clear Box</button>
+    </div>
+    <div class="status-text">Selection: <span id="selection-status">Entire Extent</span></div>
+    </div>
+
+    <!-- Inputs Panel -->
+    <div class="panel">
+      <div class="panel-title">2. Health & Economic Inputs</div> <!--[cite: 2] -->
+
+      <div class="field-row">
+        <div class="field">
+          <label for="deathRate">Baseline death rate</label> <!--[cite: 2] -->
+          <input type="number" id="deathRate" value="6.6" step="0.1" min="0"> <!--[cite: 2] -->
+          <span class="hint">per 1,000</span> <!--[cite: 2] -->
+        </div>
+        <div class="field">
+          <label for="pop25">Pop aged 25+</label> <!--[cite: 2] -->
+          <input type="number" id="pop25" value="70" step="1" min="0" max="100"> <!--[cite: 2] -->
+          <span class="hint">% of total</span> <!--[cite: 2] -->
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="vsl">Value of Statistical Life (VSL)</label>
+        <input type="number" id="vsl" value="1200000" step="10000" min="0">
+        <span class="hint">USD ($) per mortality case</span>
+      </div>
+    </div>
+
+    <!-- Grid Execution Panel -->
+    <div class="panel">
+      <div class="panel-title">3. Gridded Analysis</div>
+      <p class="hint" style="margin-bottom: 12px;">Calculates impacts on a 0.01° grid within the selected box.</p>
+      
+      <div class="button-group-vertical">
+        <button id="btn-show-heatmap" class="btn-action primary">🔥 Show Health Impact Heatmap</button>
+        <button id="download-grid-csv" class="btn-action">↓ Download 0.01° Grid CSV</button>
+        <button id="btn-clear-heatmap" class="btn-action btn-danger hidden">✕ Clear Heatmap</button>
+      </div>
+    </div>
+
+    <!-- Results Panel -->
+    <div class="panel sticky">
+      <div class="panel-title">Box Results</div>
+
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-label">Area</div>
+          <div class="stat-val" id="stat-area">Full Extent</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Total Pop</div>
+          <div class="stat-val" id="stat-pop-total">0</div>
+        </div>
+        <div class="stat-box full-width">
+          <div class="stat-label">Average PM2.5</div>
+          <div class="stat-val" id="stat-avg-pm25">—</div>
+        </div>
+      </div>
+
+      <div class="total-card mortality-count"> <!--[cite: 3] -->
+        <div class="total-label">Estimated Box Mortality</div> <!--[cite: 3] -->
+        <div class="total-value" id="totalMortalityCount">—</div> <!--[cite: 3] -->
+        <div class="total-sub">cases per year</div> <!--[cite: 3] -->
+      </div>
+      
+      <div class="total-card mortality-cost"> <!--[cite: 3] -->
+        <div class="total-label">Cost of Mortality Impacts</div> <!--[cite: 3] -->
+        <div class="total-value" id="totalMortalityCost">—</div> <!--[cite: 3] -->
+        <div class="total-sub">USD</div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- RIGHT: MAP -->
+  <main class="map-area">
+    <div id="map"></div>
+  </main>
+
+</div>
+
+<!-- Scripts -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
+<script src="script_grid.js"></script>
+
+</body>
+</html>
