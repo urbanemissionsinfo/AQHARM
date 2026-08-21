@@ -167,3 +167,53 @@ header.site p { max-width: 600px; margin: 0; color: #D8E8D3; font-size: 14px; }
 /* Map tooltips and legends */
 .leaflet-tile { mix-blend-mode: multiply; }
 .custom-tooltip { background: rgba(255,255,255,0.95); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); color: var(--ink); font-family: 'Inter'; font-size: 12px; }
+
+/* Morbidity collapsible panel */
+.morbidity-toggle-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--off-white);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: 'Inter'; font-size: 13px; font-weight: 600;
+  color: var(--green-dark);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.morbidity-toggle-btn:hover { background: var(--line); }
+.morbidity-toggle-arrow { display: inline-block; transition: transform 0.2s; font-size: 11px; }
+.morbidity-toggle-btn.open .morbidity-toggle-arrow { transform: rotate(90deg); }
+
+.morbidity-content { margin-top: 10px; }
+.morbidity-content.hidden { display: none; }
+
+.total-card.morbidity-cost::before,
+.total-card.combined-cost::before { background: var(--amber); }
+.total-card.combined-cost .total-value { color: var(--green-dark); }
+
+.morbidity-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 12px;
+}
+.morbidity-table th {
+  text-align: left;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--line);
+  padding: 6px 4px;
+}
+.morbidity-table td {
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.morbidity-table .name { font-weight: 600; color: var(--ink); }
+.morbidity-table .acronym { font-size: 10.5px; color: var(--ink-soft); margin-top: 2px; }
+.morbidity-table .impact-val, .morbidity-table .cost-val { font-family: 'Source Serif 4', serif; font-weight: 700; color: var(--mortality); }

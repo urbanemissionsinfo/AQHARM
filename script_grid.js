@@ -7,10 +7,30 @@ const CONFIG = {
 /* GEMM model constants (Burnett et al. 2018) */
 const THETA = 0.143, ALPHA = 1.6, MU = 15.5, NU = 36.8, X0 = 2.4;
 
+/* Morbidity effects: base = 'all' | 'adult' | 'under25' */
+const EFFECTS = [
+  { acr: "ACB", name: "Adult Chronic Bronchitis",      drf: 0.00004,  cost: 300000, base: "adult" },
+  { acr: "CAB", name: "Child Acute Bronchitis",         drf: 0.000544, cost: 300000, base: "under25" },
+  { acr: "RHA", name: "Respiratory Hospital Admission", drf: 0.000012, cost: 1000,   base: "all" },
+  { acr: "CHA", name: "Cardiac Hospital Admission",     drf: 0.000005, cost: 100000, base: "adult" },
+  { acr: "ERV", name: "Emergency Room Visit",           drf: 0.000235, cost: 1000,   base: "all" },
+  { acr: "AA",  name: "Asthma Attacks",                 drf: 0.0029,   cost: 50,     base: "all" },
+  { acr: "RAD", name: "Restricted Activity Days",       drf: 0.03828,  cost: 500,    base: "adult" },
+  { acr: "RSD", name: "Respiratory Symptom Days",       drf: 0.183,    cost: 30,     base: "all" }
+];
+const BASE_LABEL = { all: "population base: all ages", adult: "population base: adult 25+", under25: "population base: under 25" };
+
 // ── UI HELPER (PREVENTS ERRORS ON MISSING DOM ELEMENTS) ───────
 function updateText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
+}
+
+function fmtMoney(n) {
+  if (!isFinite(n)) n = 0;
+  if (Math.abs(n) >= 1e9) return "$" + (n / 1e9).toFixed(1) + "B";
+  if (Math.abs(n) >= 1e6) return "$" + Math.round(n / 1e6) + "M";
+  return "$" + Math.round(n).toLocaleString('en-US');
 }
 
 // ── MAP INIT ────────────────────────────────────────────────--
@@ -27,6 +47,7 @@ let rawTifInfo = {
   pm25: null
 };
 let activeBounds = null;
+let lastBoxResults = null;
 
 // Visual raster layers
 let mapLayerPop = null;
@@ -60,19 +81,17 @@ document.getElementById('drawRectBtn')?.addEventListener('click', function() {
   }
 });
 
-// Trigger calculations immediately when the box is drawn
 map.on(L.Draw.Event.CREATED, function (e) {
   drawnItems.clearLayers();
   drawnItems.addLayer(e.layer);
   activeBounds = e.layer.getBounds();
   updateAOIState(true);
-  calculateBoxResults();
+  renderHealthImpacts();
 });
 
-// Update calculations if the box is edited/resized
 map.on(L.Draw.Event.EDITED, function (e) {
   e.layers.eachLayer(function (layer) { activeBounds = layer.getBounds(); });
-  calculateBoxResults();
+  renderHealthImpacts();
 });
 
 map.on(L.Draw.Event.DELETED, function () {
@@ -82,6 +101,7 @@ map.on(L.Draw.Event.DELETED, function () {
 function clearBoundingBox() {
   drawnItems.clearLayers();
   activeBounds = null;
+  heatmapLayer.clearLayers();
   updateAOIState(false);
 
   updateText('stat-area', 'Full Extent');
@@ -89,6 +109,15 @@ function clearBoundingBox() {
   updateText('stat-avg-pm25', '—');
   updateText('totalMortalityCount', '—');
   updateText('totalMortalityCost', '—');
+  updateText('totalMorbidityCost', '—');
+  updateText('totalCombinedCost', '—');
+  EFFECTS.forEach((eff, i) => {
+    updateText(`morb-cases-${i}`, '—');
+    updateText(`morb-cost-${i}`, '—');
+  });
+  lastBoxResults = null;
+  const downloadBtn = document.getElementById('btn-download-box-csv');
+  if (downloadBtn) downloadBtn.disabled = true;
 }
 
 function updateAOIState(hasBox) {
@@ -179,7 +208,9 @@ function updateLegend() {
   legendEl.classList.remove('hidden');
 }
 
-// ── RASTER LAYER GENERATOR ────────────────────────────────────
+// ── RASTER LAYER GENERATOR (custom canvas tiles — avoids GeoRasterLayer's
+// tile-caching/z-index bugs where a toggled-on layer "sticks" and blocks
+// whatever is toggled on after it) ─────────────────────────────
 function createRasterLayer(tifInfo, colorScaleFn, zIndex) {
   const layer = L.gridLayer({ opacity: 0.7, zIndex: zIndex });
 
@@ -236,7 +267,13 @@ function createRasterLayer(tifInfo, colorScaleFn, zIndex) {
   return layer;
 }
 
-// ── GEOTIFF LOADER ───────────────────────────────────────────
+// ── GEOTIFF LOADER (SINGLE PARSE, REUSED FOR MATH + VISUAL LAYER) ──
+// Previously the app fetched each file once but then parsed it TWICE:
+// once via GeoTIFF.fromArrayBuffer (for the math grid) and again via
+// parseGeoraster (for the visual GeoRasterLayer). For large rasters
+// that second full decode is what was hanging the page. Here we parse
+// once and build a georaster-compatible object by hand from the same
+// decoded data, so GeoRasterLayer never has to re-decode the TIFF.
 async function loadTifDataHelper(arrayBuffer) {
   const tif = await GeoTIFF.fromArrayBuffer(arrayBuffer);
   const image = await tif.getImage();
@@ -260,7 +297,7 @@ async function loadTifDataHelper(arrayBuffer) {
     originY: bbox[3],
     pixelW: pixelW,
     pixelH: pixelH,
-    bbox: bbox
+    bbox: bbox // [xmin, ymin, xmax, ymax]
   };
 }
 
@@ -404,13 +441,23 @@ function calculateCellImpact(c, baselineDeathRate, frac25) {
   return { pop: cellPop, pm25: avgPm25, mortality: mortalityCases };
 }
 
-// ── CALCULATION EXECUTION (NO HEATMAP VISUALS) ───────────────
-function calculateBoxResults() {
-  if (!activeBounds) return; // No box drawn
-  if (!rawTifInfo.population || !rawTifInfo.pm25) {
-    console.warn("Rasters are still loading. Cannot calculate yet.");
-    return;
-  }
+// ── HEATMAP RENDERING ────────────────────────────────────────
+const heatmapLayer = L.featureGroup().addTo(map);
+
+function getHeatmapColor(val, maxVal) {
+  if (maxVal === 0 || val === 0) return 'transparent';
+  const ratio = val / maxVal;
+  if (ratio > 0.8) return '#bd0026';
+  if (ratio > 0.6) return '#f03b20';
+  if (ratio > 0.4) return '#fd8d3c';
+  if (ratio > 0.2) return '#fecc5c';
+  return '#ffffb2';
+}
+
+function renderHealthImpacts() {
+  if (!activeBounds) return alert("Please draw a bounding box first.");
+
+  heatmapLayer.clearLayers();
 
   const deathRateEl = document.getElementById('deathRate');
   const pop25El = document.getElementById('pop25');
@@ -423,12 +470,13 @@ function calculateBoxResults() {
   const bbox = { swLng: activeBounds.getWest(), swLat: activeBounds.getSouth(), neLng: activeBounds.getEast(), neLat: activeBounds.getNorth() };
   const cells = computeGrid01(bbox);
 
+  const gridData = [];
   let totalMortality = 0, totalPop = 0, pmSum = 0, pmCount = 0;
 
-  // Process math behind the scenes silently 
   cells.forEach(c => {
     const impact = calculateCellImpact(c, baselineDeathRate, frac25);
     if (impact) {
+      gridData.push({ bounds: [[c.sw_lat, c.sw_long], [c.ne_lat, c.ne_long]], ...impact });
       totalMortality += impact.mortality;
       totalPop += impact.pop;
       if (impact.pm25 > 0) {
@@ -438,17 +486,41 @@ function calculateBoxResults() {
     }
   });
 
-  // Calculate Aggregates
+  const maxMortality = gridData.length > 0 ? Math.max(...gridData.map(d => d.mortality)) : 0;
+
+  // Heatmap grid rectangles disabled for now — re-enable when the
+  // "3. Gridded Analysis" panel is uncommented in AQHARM2.html.
+  /*
+  gridData.forEach(d => {
+    if (d.mortality === 0) return;
+
+    const rect = L.rectangle(d.bounds, {
+      color: '#000000', weight: 0.5,
+      fillColor: getHeatmapColor(d.mortality, maxMortality),
+      fillOpacity: 0.7
+    });
+
+    rect.bindTooltip(`
+      <div style="text-align:center;">
+        <b>Premature Mortality:</b> ${d.mortality.toFixed(2)} cases/yr<br>
+        <b>Local PM2.5:</b> ${d.pm25.toFixed(1)} µg/m³<br>
+        <b>Cell Population:</b> ${d.pop.toFixed(0)}
+      </div>
+    `);
+
+    heatmapLayer.addLayer(rect);
+  });
+  */
+
+  // Update Overall Total UI
   const avgBoxPm = pmCount > 0 ? (pmSum / pmCount) : 0;
   const totalCost = totalMortality * vsl;
 
-  // Approximate Area in km²
   const lat1 = bbox.swLat * Math.PI / 180;
   const lat2 = bbox.neLat * Math.PI / 180;
   const dLng = Math.abs(bbox.neLng - bbox.swLng) * Math.PI / 180;
   const areaKm2 = 6371.0088 * 6371.0088 * dLng * Math.abs(Math.sin(lat2) - Math.sin(lat1));
 
-  // Update UI Elements
   updateText('stat-area', `${areaKm2.toLocaleString(undefined, { maximumFractionDigits: 0 })} km²`);
   updateText('stat-pop-total', Math.round(totalPop).toLocaleString('en-US'));
   updateText('stat-avg-pm25', `${avgBoxPm.toFixed(1)} µg/m³`);
@@ -458,13 +530,127 @@ function calculateBoxResults() {
   if (totalCost >= 1e9) costStr = "$" + (totalCost/1e9).toFixed(1) + "B";
   else if (totalCost >= 1e6) costStr = "$" + Math.round(totalCost/1e6) + "M";
   updateText('totalMortalityCost', costStr);
+
+  // Morbidity — linear in population, so computed from box-wide totals
+  const { morbidityCostUSD, breakdown } = calculateMorbidity(totalPop, frac25);
+  updateText('totalMorbidityCost', fmtMoney(morbidityCostUSD));
+  updateText('totalCombinedCost', fmtMoney(totalCost + morbidityCostUSD));
+
+  // Store everything needed for the CSV export
+  lastBoxResults = {
+    areaKm2, totalPop, avgBoxPm,
+    baselineDeathRate, frac25: frac25 * 100, vsl,
+    totalMortality, totalMortalityCostUSD: totalCost,
+    morbidityCostUSD, combinedCostUSD: totalCost + morbidityCostUSD,
+    breakdown
+  };
+  const downloadBtn = document.getElementById('btn-download-box-csv');
+  if (downloadBtn) downloadBtn.disabled = false;
+
+  // document.getElementById('btn-clear-heatmap')?.classList.remove('hidden'); // heatmap disabled for now
 }
 
-// Ensure the results recalculate dynamically if a user changes the inputs 
-// while a bounding box is currently drawn
-document.getElementById('deathRate')?.addEventListener('input', calculateBoxResults);
-document.getElementById('pop25')?.addEventListener('input', calculateBoxResults);
-document.getElementById('vsl')?.addEventListener('input', calculateBoxResults);
+// ── MORBIDITY TABLE (population-based, independent of PM2.5 — matches
+// the reference calculator: cases = drf * relevant population base) ──
+function buildMorbidityRows() {
+  const tbody = document.getElementById('morbidity-body');
+  if (!tbody) return;
+  tbody.innerHTML = EFFECTS.map((eff, i) => `
+    <tr>
+      <td class="effect-name">
+        <div class="name">${eff.name}</div>
+        <div class="acronym">${eff.acr} · ${BASE_LABEL[eff.base]}</div>
+      </td>
+      <td><span class="impact-val" id="morb-cases-${i}">—</span></td>
+      <td><span class="cost-val" id="morb-cost-${i}">—</span></td>
+    </tr>
+  `).join('');
+}
+
+function calculateMorbidity(totalPop, frac25) {
+  const popAdult = totalPop * frac25;
+  const popUnder25 = totalPop - popAdult;
+  const popByBase = { all: totalPop, adult: popAdult, under25: popUnder25 };
+
+  let morbidityCostUSD = 0;
+  const breakdown = [];
+  EFFECTS.forEach((eff, i) => {
+    const basePop = popByBase[eff.base];
+    const cases = eff.drf * basePop;
+    const costUSD = cases * eff.cost;
+    morbidityCostUSD += costUSD;
+    breakdown.push({ acr: eff.acr, name: eff.name, cases, costUSD });
+    updateText(`morb-cases-${i}`, Math.round(cases).toLocaleString('en-US'));
+    updateText(`morb-cost-${i}`, fmtMoney(costUSD));
+  });
+
+  return { morbidityCostUSD, breakdown };
+}
+
+document.getElementById('morbidity-toggle')?.addEventListener('click', function() {
+  const content = document.getElementById('morbidity-content');
+  if (!content) return;
+  const isOpen = !content.classList.contains('hidden');
+  content.classList.toggle('hidden', isOpen);
+  this.classList.toggle('open', !isOpen);
+});
+
+buildMorbidityRows();
+document.getElementById('btn-show-heatmap')?.addEventListener('click', renderHealthImpacts);
+
+['deathRate', 'pop25', 'vsl'].forEach(id => {
+  document.getElementById(id)?.addEventListener('input', function() {
+    if (activeBounds) renderHealthImpacts();
+  });
+});
+
+document.getElementById('btn-clear-heatmap')?.addEventListener('click', function() {
+  heatmapLayer.clearLayers();
+  this.classList.add('hidden');
+});
+
+// ── BOX RESULTS CSV EXPORT ─────────────────────────────────────
+function buildBoxResultsCsv(r) {
+  const rows = [
+    ['Metric', 'Value'],
+    ['Area (km2)', r.areaKm2.toFixed(0)],
+    ['Total Population', Math.round(r.totalPop)],
+    ['Average PM2.5 (ug/m3)', r.avgBoxPm.toFixed(2)],
+    ['Baseline Death Rate (per 1000)', r.baselineDeathRate],
+    ['Population Aged 25+ (%)', r.frac25.toFixed(1)],
+    ['Value of Statistical Life (USD)', r.vsl],
+    [''],
+    ['Estimated Mortality (cases/yr)', r.totalMortality.toFixed(2)],
+    ['Cost of Mortality (USD)', r.totalMortalityCostUSD.toFixed(2)],
+    ['Total Morbidity Cost (USD)', r.morbidityCostUSD.toFixed(2)],
+    ['Combined Mortality + Morbidity Cost (USD)', r.combinedCostUSD.toFixed(2)],
+    [''],
+    ['Morbidity Effect', 'Cases/yr', 'Cost (USD)']
+  ];
+
+  r.breakdown.forEach(b => {
+    rows.push([`${b.name} (${b.acr})`, b.cases.toFixed(2), b.costUSD.toFixed(2)]);
+  });
+
+  return rows.map(row => row.map(cell => {
+    const s = String(cell);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }).join(',')).join('\n');
+}
+
+document.getElementById('btn-download-box-csv')?.addEventListener('click', function() {
+  if (!lastBoxResults) return;
+  const csv = buildBoxResultsCsv(lastBoxResults);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'box_results.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
 
 // Run application
 init();

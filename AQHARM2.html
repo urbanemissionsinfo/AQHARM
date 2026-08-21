@@ -117,6 +117,35 @@
         <div class="total-value" id="totalMortalityCost">—</div> <!--[cite: 3] -->
         <div class="total-sub">USD</div>
       </div>
+
+      <button id="morbidity-toggle" class="morbidity-toggle-btn" type="button">
+        <span class="morbidity-toggle-arrow">▸</span>
+        <span>Morbidity Impacts &amp; Costs</span>
+      </button>
+
+      <div id="morbidity-content" class="morbidity-content hidden">
+        <div class="total-card morbidity-cost">
+          <div class="total-label">Total Morbidity Cost</div>
+          <div class="total-value" id="totalMorbidityCost">—</div>
+          <div class="total-sub">USD</div>
+        </div>
+
+        <table class="morbidity-table">
+          <thead>
+            <tr><th>Effect</th><th>Cases/yr</th><th>Cost</th></tr>
+          </thead>
+          <tbody id="morbidity-body"></tbody>
+        </table>
+
+        <div class="total-card combined-cost">
+          <div class="total-label">Combined Mortality + Morbidity Cost</div>
+          <div class="total-value" id="totalCombinedCost">—</div>
+          <div class="total-sub">USD</div>
+        </div>
+      </div>
+
+      <button id="btn-download-box-csv" class="btn-action" style="margin-top:14px; width:100%;" disabled>↓ Download Box Results CSV</button>
+
     </div>
 
   </aside>
@@ -132,8 +161,6 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
-<script src="https://unpkg.com/georaster"></script>
-<script src="https://unpkg.com/georaster-layer-for-leaflet"></script>
 <script src="script_grid.js"></script>
 
 </body>
