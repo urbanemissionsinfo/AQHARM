@@ -297,6 +297,11 @@
     padding:6px 14px;border-radius:20px;cursor:pointer;
   }
   .btn-reset:hover{background:var(--green);color:#fff;}
-
+  
+  .btn-toggle.active {
+  background: #164D12;
+  color: #fff;
+  border-color: #164D12;
+  }
   footer{margin-top:50px;padding-top:24px;border-top:1px solid var(--line);color:var(--ink-soft);font-size:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;}
   footer a{color:var(--green-dark);}
