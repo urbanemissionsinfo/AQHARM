@@ -567,7 +567,7 @@ function buildMorbidityRows() {
   `).join('');
 }
 
-function calculateMorbidity(totalPop, frac25) {
+function calculateMorbidity(totalPop, frac25,z) {
   const popAdult = totalPop * frac25;
   const popUnder25 = totalPop - popAdult;
   const popByBase = { all: totalPop, adult: popAdult, under25: popUnder25 };
@@ -576,7 +576,7 @@ function calculateMorbidity(totalPop, frac25) {
   const breakdown = [];
   EFFECTS.forEach((eff, i) => {
     const basePop = popByBase[eff.base];
-    const cases = eff.drf * basePop * z;
+    const cases = eff.drf * basePop*z;
     const costUSD = cases * eff.cost;
     morbidityCostUSD += costUSD;
     breakdown.push({ acr: eff.acr, name: eff.name, cases, costUSD });
