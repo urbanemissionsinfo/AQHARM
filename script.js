@@ -130,7 +130,7 @@ function calculate(){
   const popByBase = {all: popTotal, adult: popAdult, under25: popUnder25};
   EFFECTS.forEach((eff, i) => {
     const basePop = popByBase[eff.base];
-    const cases = eff.drf * basePop;
+    const cases = eff.drf * basePop * z;
     const costUSD = cases * eff.cost;
     morbidityCostUSD += costUSD;
     document.getElementById(`impact-${i}`).textContent = fmtInt(cases);

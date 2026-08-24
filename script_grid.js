@@ -576,7 +576,7 @@ function calculateMorbidity(totalPop, frac25) {
   const breakdown = [];
   EFFECTS.forEach((eff, i) => {
     const basePop = popByBase[eff.base];
-    const cases = eff.drf * basePop;
+    const cases = eff.drf * basePop * z;
     const costUSD = cases * eff.cost;
     morbidityCostUSD += costUSD;
     breakdown.push({ acr: eff.acr, name: eff.name, cases, costUSD });
