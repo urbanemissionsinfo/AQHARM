@@ -1,7 +1,7 @@
 // ── CONFIGURATION & CONSTANTS ────────────────────────────────
 const CONFIG = {
   populationTifPath: 'landscan-southasia-2024-compressed.tif',
-  pm25TifPath: 'meanpm25_india_wustl_2023_zstd.tif',
+  // pm25TifPath: 'meanpm25_india_wustl_2023_zstd.tif',
   stationsGeoJsonPath: 'stations.geojson'
 };
 
