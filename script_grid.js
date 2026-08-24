@@ -532,7 +532,8 @@ function renderHealthImpacts() {
   updateText('totalMortalityCost', costStr);
 
   // Morbidity — linear in population, so computed from box-wide totals
-  const { morbidityCostUSD, breakdown } = calculateMorbidity(totalPop, frac25);
+  const z = Math.max(avgBoxPm - X0, 0);
+  const { morbidityCostUSD, breakdown } = calculateMorbidity(totalPop, frac25, z);
   updateText('totalMorbidityCost', fmtMoney(morbidityCostUSD));
   updateText('totalCombinedCost', fmtMoney(totalCost + morbidityCostUSD));
 

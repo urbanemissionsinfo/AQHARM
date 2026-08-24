@@ -92,8 +92,8 @@
         <div class="currency-bar">
           <label for="currencySelect">Display currency</label>
           <select id="currencySelect">
-            <option value="USD">USD — US Dollar ($)</option>
-            <option value="INR" selected>INR — Indian Rupee (₹)</option>
+            <option value="USD" selected>USD — US Dollar ($)</option>
+            <option value="INR">INR — Indian Rupee (₹)</option>
             <option value="EUR">EUR — Euro (€)</option>
             <option value="GBP">GBP — British Pound (£)</option>
             <option value="JPY">JPY — Japanese Yen (¥)</option>
@@ -147,21 +147,21 @@
   <section>
     <div class="section-eyebrow">Detail</div>
     <h2>Morbidity effects</h2>
-    <p class="section-desc">Each morbidity endpoint applies its dose–response rate directly to the relevant population base (all-age, adult 25+, or under-25 — noted below each effect). Defaults are loaded from the GEMM reference workbook; every rate and cost-per-case figure is editable.</p>
+    <p class="section-desc">Each morbidity endpoint applies its dose-response function directly to the relevant population base (all-age, adult 25+, or under-25 — noted below each effect). Defaults are loaded from the <a href="https://urbanemissions.info/wp-content/uploads/docs/SIM-06-2008.pdf" target="_blank">SIM-air Working Paper #2008-06</a>; dose-response functions, and cost-per-case figure is editable. The final cost estimates are GDP-adjusted for the for selected reference and case study inputs.</p>
     <div class="table-card">
       <table>
         <thead>
           <tr>
             <th>Health effect</th>
-            <th>Rate <span style="font-weight:400;text-transform:none;">(per capita)</span></th>
+            <th>Dose Response Function <span style="font-weight:400;text-transform:none;">(per capita)</span></th>
             <th>Cost per case</th>
             <th>Estimated cases</th>
-            <th>Estimated cost (USD)</th>
+            <th>Estimated cost (USD GDP corrected)</th>
           </tr>
         </thead>
         <tbody id="effectsBody"></tbody>
       </table>
-      <div class="reset-row"><button class="btn-reset" id="resetBtn">Reset to GEMM defaults</button></div>
+      <div class="reset-row"><button class="btn-reset" id="resetBtn">Reset to defaults</button></div>
     </div>
   </section>
 

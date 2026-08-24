@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gridded AQ-HARM · Spatial Health Impacts</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap header-wrap">
+    <div>
+      <div class="brand-mark">Urban Emissions Info</div>
+      <h1>Gridded AQ-HARM</h1>
+      <p>Estimating premature mortality and economic costs based on default box area, station PM2.5 concentrations, and LandScan population data.</p>
+      <span class="model-badge">GEMM mortality model · Burnett et al. 2018</span>
+    </div>
+  </div>
+</header>
+
+<div class="app-container">
+  
+  <!-- LEFT: SIDEBAR CONTROLS & RESULTS -->
+  <aside class="sidebar">
+    
+    <!-- Layers & AOI Panel -->
+    <div class="panel">
+      <div class="panel-title">1. Map Layers & Area</div>
+      
+      <div class="button-group">
+        <button id="btn-population" class="btn-toggle" disabled>Loading Pop...</button>
+        <button id="btn-pm25" class="btn-toggle" disabled>Loading PM2.5...</button>
+      </div>
+
+      <div id="raster-legend" class="raster-legend hidden"></div>
+
+      <div class="status-text" style="margin-top:10px;">
+        Selection: <span id="selection-status" style="color: #164D12; font-weight: 600;">Default Box Area</span>
+      </div>
+    </div>
+
+    <!-- Inputs Panel -->
+    <div class="panel">
+      <div class="panel-title">2. Health & Economic Inputs</div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="deathRate">Baseline death rate</label>
+          <input type="number" id="deathRate" value="6.6" step="0.1" min="0">
+          <span class="hint">per 1,000</span>
+        </div>
+        <div class="field">
+          <label for="pop25">Pop aged 25+</label>
+          <input type="number" id="pop25" value="70" step="1" min="0" max="100">
+          <span class="hint">% of total</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="vsl">Value of Statistical Life (VSL)</label>
+        <input type="number" id="vsl" value="1200000" step="10000" min="0">
+        <span class="hint">USD ($) per mortality case</span>
+      </div>
+    </div>
+
+    <!-- Results Panel -->
+    <div class="panel sticky">
+      <div class="panel-title">Box Results</div>
+
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-label">Area</div>
+          <div class="stat-val" id="stat-area">—</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Total Pop</div>
+          <div class="stat-val" id="stat-pop-total">0</div>
+        </div>
+        <div class="stat-box full-width">
+          <div class="stat-label">Station Avg PM2.5</div>
+          <div class="stat-val" id="stat-avg-pm25">—</div>
+        </div>
+      </div>
+
+      <div class="total-card mortality-count">
+        <div class="total-label">Estimated Box Mortality</div>
+        <div class="total-value" id="totalMortalityCount">0</div>
+        <div class="total-sub">cases per hour</div>
+      </div>
+      
+      <div class="total-card mortality-cost">
+        <div class="total-label">Cost of Mortality Impacts</div>
+        <div class="total-value" id="totalMortalityCost">$0</div>
+        <div class="total-sub">USD</div>
+      </div>
+
+      <button id="morbidity-toggle" class="morbidity-toggle-btn" type="button">
+        <span class="morbidity-toggle-arrow">▸</span>
+        <span>Morbidity Impacts &amp; Costs</span>
+      </button>
+
+      <div id="morbidity-content" class="morbidity-content hidden">
+        <div class="total-card morbidity-cost">
+          <div class="total-label">Total Morbidity Cost</div>
+          <div class="total-value" id="totalMorbidityCost">$0</div>
+          <div class="total-sub">USD</div>
+        </div>
+
+        <table class="morbidity-table">
+          <thead>
+            <tr><th>Effect</th><th>Cases/yr</th><th>Cost</th></tr>
+          </thead>
+          <tbody id="morbidity-body"></tbody>
+        </table>
+
+        <div class="total-card combined-cost">
+          <div class="total-label">Combined Mortality + Morbidity Cost</div>
+          <div class="total-value" id="totalCombinedCost">$0</div>
+          <div class="total-sub">USD</div>
+        </div>
+      </div>
+
+      <button id="btn-download-box-csv" class="btn-action" style="margin-top:14px; width:100%;" disabled>↓ Download Box Results CSV</button>
+
+    </div>
+
+  </aside>
+
+  <!-- RIGHT: MAP -->
+  <main class="map-area">
+    <div id="map"></div>
+  </main>
+
+</div>
+
+<!-- Scripts -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
+<script src="script.js"></script>
+
+</body>
+</html>
