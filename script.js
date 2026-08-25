@@ -122,7 +122,9 @@ function calculate(){
   const popUnder25 = popTotal - popAdult;
 
   const mortalityCases = AF * y0 * popAdult;
-  const VSL = vslRef * Math.pow(gdp / gdpRef, elasticity);
+  
+  const gdp_correction = Math.pow(gdp / gdpRef, elasticity);
+  const VSL = vslRef * gdp_correction;
   const mortalityCostUSD = mortalityCases * VSL;
 
   /* Morbidity */
@@ -131,7 +133,7 @@ function calculate(){
   EFFECTS.forEach((eff, i) => {
     const basePop = popByBase[eff.base];
     const cases = eff.drf * basePop * z;
-    const costUSD = cases * eff.cost;
+    const costUSD = cases * eff.cost * gdp_correction;
     morbidityCostUSD += costUSD;
     document.getElementById(`impact-${i}`).textContent = fmtInt(cases);
     document.getElementById(`cost-${i}`).textContent = fmtMoney(costUSD, '$');

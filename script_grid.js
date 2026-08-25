@@ -459,13 +459,18 @@ function renderHealthImpacts() {
 
   heatmapLayer.clearLayers();
 
-  const deathRateEl = document.getElementById('deathRate');
-  const pop25El = document.getElementById('pop25');
-  const vslEl = document.getElementById('vsl');
+  // 1. Read input values directly from HTML elements
+  const baselineDeathRate = parseFloat(document.getElementById('deathRate').value) || 6.6;
+  const frac25 = (parseFloat(document.getElementById('pop25').value) || 70) / 100;
+  
+  const gdp = parseFloat(document.getElementById('gdp').value) || 0;
+  const gdpRef = parseFloat(document.getElementById('gdpRef').value) || 1;
+  const vslRef = parseFloat(document.getElementById('vslRef').value) || 0;
+  const elasticity = parseFloat(document.getElementById('elasticity').value) || 0;
 
-  const baselineDeathRate = deathRateEl ? parseFloat(deathRateEl.value) || 6.6 : 6.6;
-  const frac25 = pop25El ? (parseFloat(pop25El.value) || 70) / 100 : 0.70;
-  const vsl = vslEl ? parseFloat(vslEl.value) || 0 : 0;
+  // 2. Compute dynamic GDP correction and adjusted VSL
+  const gdpCorrection = (gdp > 0 && gdpRef > 0) ? Math.pow(gdp / gdpRef, elasticity) : 1;
+  const VSL = vslRef * gdpCorrection;
 
   const bbox = { swLng: activeBounds.getWest(), swLat: activeBounds.getSouth(), neLng: activeBounds.getEast(), neLat: activeBounds.getNorth() };
   const cells = computeGrid01(bbox);
@@ -486,69 +491,36 @@ function renderHealthImpacts() {
     }
   });
 
-  const maxMortality = gridData.length > 0 ? Math.max(...gridData.map(d => d.mortality)) : 0;
-
-  // Heatmap grid rectangles disabled for now — re-enable when the
-  // "3. Gridded Analysis" panel is uncommented in AQHARM2.html.
-  /*
-  gridData.forEach(d => {
-    if (d.mortality === 0) return;
-
-    const rect = L.rectangle(d.bounds, {
-      color: '#000000', weight: 0.5,
-      fillColor: getHeatmapColor(d.mortality, maxMortality),
-      fillOpacity: 0.7
-    });
-
-    rect.bindTooltip(`
-      <div style="text-align:center;">
-        <b>Premature Mortality:</b> ${d.mortality.toFixed(2)} cases/yr<br>
-        <b>Local PM2.5:</b> ${d.pm25.toFixed(1)} µg/m³<br>
-        <b>Cell Population:</b> ${d.pop.toFixed(0)}
-      </div>
-    `);
-
-    heatmapLayer.addLayer(rect);
-  });
-  */
-
-  // Update Overall Total UI
   const avgBoxPm = pmCount > 0 ? (pmSum / pmCount) : 0;
-  const totalCost = totalMortality * vsl;
+  const totalMortalityCostUSD = totalMortality * VSL;
 
   const lat1 = bbox.swLat * Math.PI / 180;
   const lat2 = bbox.neLat * Math.PI / 180;
   const dLng = Math.abs(bbox.neLng - bbox.swLng) * Math.PI / 180;
   const areaKm2 = 6371.0088 * 6371.0088 * dLng * Math.abs(Math.sin(lat2) - Math.sin(lat1));
 
+  // Update UI Stats
   updateText('stat-area', `${areaKm2.toLocaleString(undefined, { maximumFractionDigits: 0 })} km²`);
   updateText('stat-pop-total', Math.round(totalPop).toLocaleString('en-US'));
   updateText('stat-avg-pm25', `${avgBoxPm.toFixed(1)} µg/m³`);
   updateText('totalMortalityCount', Math.round(totalMortality).toLocaleString('en-US'));
+  updateText('totalMortalityCost', fmtMoney(totalMortalityCostUSD));
 
-  let costStr = "$" + Math.round(totalCost).toLocaleString('en-US');
-  if (totalCost >= 1e9) costStr = "$" + (totalCost/1e9).toFixed(1) + "B";
-  else if (totalCost >= 1e6) costStr = "$" + Math.round(totalCost/1e6) + "M";
-  updateText('totalMortalityCost', costStr);
-
-  // Morbidity — linear in population, so computed from box-wide totals
+  // 3. Compute Morbidity costs using gdpCorrection
   const z = Math.max(avgBoxPm - X0, 0);
-  const { morbidityCostUSD, breakdown } = calculateMorbidity(totalPop, frac25, z);
+  const { morbidityCostUSD, breakdown } = calculateMorbidity(totalPop, frac25, z, gdpCorrection);
   updateText('totalMorbidityCost', fmtMoney(morbidityCostUSD));
-  updateText('totalCombinedCost', fmtMoney(totalCost + morbidityCostUSD));
+  updateText('totalCombinedCost', fmtMoney(totalMortalityCostUSD + morbidityCostUSD));
 
-  // Store everything needed for the CSV export
   lastBoxResults = {
     areaKm2, totalPop, avgBoxPm,
-    baselineDeathRate, frac25: frac25 * 100, vsl,
-    totalMortality, totalMortalityCostUSD: totalCost,
-    morbidityCostUSD, combinedCostUSD: totalCost + morbidityCostUSD,
+    baselineDeathRate, frac25: frac25 * 100, vsl: VSL,
+    totalMortality, totalMortalityCostUSD,
+    morbidityCostUSD, combinedCostUSD: totalMortalityCostUSD + morbidityCostUSD,
     breakdown
   };
   const downloadBtn = document.getElementById('btn-download-box-csv');
   if (downloadBtn) downloadBtn.disabled = false;
-
-  // document.getElementById('btn-clear-heatmap')?.classList.remove('hidden'); // heatmap disabled for now
 }
 
 // ── MORBIDITY TABLE (population-based, independent of PM2.5 — matches
@@ -568,7 +540,7 @@ function buildMorbidityRows() {
   `).join('');
 }
 
-function calculateMorbidity(totalPop, frac25,z) {
+function calculateMorbidity(totalPop, frac25, z, gdpCorrection = 1) {
   const popAdult = totalPop * frac25;
   const popUnder25 = totalPop - popAdult;
   const popByBase = { all: totalPop, adult: popAdult, under25: popUnder25 };
@@ -577,8 +549,8 @@ function calculateMorbidity(totalPop, frac25,z) {
   const breakdown = [];
   EFFECTS.forEach((eff, i) => {
     const basePop = popByBase[eff.base];
-    const cases = eff.drf * basePop*z;
-    const costUSD = cases * eff.cost;
+    const cases = eff.drf * basePop * z;
+    const costUSD = cases * eff.cost * gdpCorrection; // Scaled by GDP correction
     morbidityCostUSD += costUSD;
     breakdown.push({ acr: eff.acr, name: eff.name, cases, costUSD });
     updateText(`morb-cases-${i}`, Math.round(cases).toLocaleString('en-US'));
@@ -587,6 +559,34 @@ function calculateMorbidity(totalPop, frac25,z) {
 
   return { morbidityCostUSD, breakdown };
 }
+
+// Bind recalculation to all economic input fields
+function calculateMorbidity(totalPop, frac25, z, gdpCorrection = 1) {
+  const popAdult = totalPop * frac25;
+  const popUnder25 = totalPop - popAdult;
+  const popByBase = { all: totalPop, adult: popAdult, under25: popUnder25 };
+
+  let morbidityCostUSD = 0;
+  const breakdown = [];
+  EFFECTS.forEach((eff, i) => {
+    const basePop = popByBase[eff.base];
+    const cases = eff.drf * basePop * z;
+    const costUSD = cases * eff.cost * gdpCorrection;
+    morbidityCostUSD += costUSD;
+    breakdown.push({ acr: eff.acr, name: eff.name, cases, costUSD });
+    updateText(`morb-cases-${i}`, Math.round(cases).toLocaleString('en-US'));
+    updateText(`morb-cost-${i}`, fmtMoney(costUSD));
+  });
+
+  return { morbidityCostUSD, breakdown };
+}
+
+// Bind recalculation to all economic input fields
+['deathRate', 'pop25', 'gdp', 'gdpRef', 'vslRef', 'elasticity'].forEach(id => {
+  document.getElementById(id)?.addEventListener('input', function() {
+    if (activeBounds) renderHealthImpacts();
+  });
+});
 
 document.getElementById('morbidity-toggle')?.addEventListener('click', function() {
   const content = document.getElementById('morbidity-content');
@@ -599,7 +599,7 @@ document.getElementById('morbidity-toggle')?.addEventListener('click', function(
 buildMorbidityRows();
 document.getElementById('btn-show-heatmap')?.addEventListener('click', renderHealthImpacts);
 
-['deathRate', 'pop25', 'vsl'].forEach(id => {
+['deathRate', 'pop25', 'vsl', 'vslRef', 'gdp', 'gdpRef', 'elasticity'].forEach(id => {
   document.getElementById(id)?.addEventListener('input', function() {
     if (activeBounds) renderHealthImpacts();
   });
