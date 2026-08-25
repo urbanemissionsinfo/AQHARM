@@ -85,11 +85,17 @@ function animateCounter(id, targetValue, duration = 3600000, isCurrency = false)
 
   activeAnimationTimers[id] = requestAnimationFrame(step);
 }
-// ── MAP INIT & DEFAULT BOUNDING BOX ────────────────────────────
-const map = L.map('map', { center: [21.5, 78.5], zoom: 6, zoomControl: true });
 
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-  attribution: 'Tiles &copy; Esri',
+// ── MAP INIT & DEFAULT BOUNDING BOX ────────────────────────────
+const map = L.map('map', {
+  center: [21.5, 78.5],
+  zoom: 6,
+  zoomControl: true,
+  maxBoundsViscosity: 1.0 // fully resist dragging/panning past maxBounds
+});
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors',
   maxZoom: 18
 }).addTo(map);
 
@@ -104,6 +110,27 @@ const defaultBoxLayer = L.rectangle(DEFAULT_BOUNDS, {
 }).addTo(map);
 
 map.fitBounds(DEFAULT_BOUNDS);
+
+// ── RESTRICT PAN/ZOOM TO REGION (with margin) ──────────────────
+// Pad the region bounds outward by a margin so users have a little
+// breathing room but can't pan/zoom away to unrelated parts of the world.
+const PAN_MARGIN_RATIO = 1.0; // 1.0 = pad by 100% of the box's own width/height on each side; tweak as needed
+const PAN_BOUNDS = DEFAULT_BOUNDS.pad(PAN_MARGIN_RATIO);
+
+map.setMaxBounds(PAN_BOUNDS);
+
+// Prevent zooming out past the point where the full DEFAULT_BOUNDS box
+// stops fitting in the viewport (i.e. the entire box must always be visible).
+function clampMinZoom() {
+  const fitZoom = map.getBoundsZoom(DEFAULT_BOUNDS, false);
+  map.setMinZoom(fitZoom);
+  // If current zoom is now below the new minimum, snap back into range
+  if (map.getZoom() < fitZoom) map.setZoom(fitZoom);
+}
+clampMinZoom();
+
+// Re-clamp minZoom on resize, since viewport size affects the calculation
+map.on('resize', clampMinZoom);
 
 // ── STATE VARIABLES ───────────────────────────────────────────
 let rawTifInfo = {
@@ -276,6 +303,16 @@ async function loadTifDataHelper(arrayBuffer) {
 }
 
 // ── GEOJSON STATIONS LOADER ───────────────────────────────────
+// Dynamic Green-to-Red color scale for PM2.5 station markers
+function getStationPmColor(val) {
+  if (val <= 0 || isNaN(val)) return '#aaaaaa'; // Gray for nodata/invalid
+  if (val <= 12)   return '#00e400'; // Good (Green)
+  if (val <= 35.4) return '#91cf60'; // Moderate (Light Green)
+  if (val <= 55.4) return '#ffff00'; // Unhealthy for Sensitive Groups (Yellow)
+  if (val <= 75)   return '#ff7e00'; // Unhealthy (Orange)
+  if (val <= 150)  return '#ff0000'; // Very Unhealthy (Red)
+  return '#7e0023';                 // Hazardous (Dark Red / Maroon)
+}
 // ── GEOJSON STATIONS LOADER ───────────────────────────────────
 async function loadStationsGeoJSON() {
   try {
@@ -289,17 +326,19 @@ async function loadStationsGeoJSON() {
 
     stationGeoJsonLayer = L.geoJSON(data, {
       pointToLayer: (feature, latlng) => {
+        // Read PM2.5 value for each station
+        const pmVal = Number(feature.properties?.value ?? feature.properties?.VALUE ?? 0);
+        
         return L.circleMarker(latlng, {
-          radius: 5,
-          fillColor: '#d95f02',
-          color: '#000',
-          weight: 1,
+          radius: 6,
+          fillColor: getStationPmColor(pmVal), // Dynamic green-to-red scale
+          color: '#111111',                     // Dark outline for contrast
+          weight: 1.2,
           opacity: 1,
-          fillOpacity: 0.85
+          fillOpacity: 0.9
         });
       },
       onEachFeature: (feature, layer) => {
-        // Reads PM2.5 from the "value" property
         const pmVal = feature.properties?.value ?? feature.properties?.VALUE ?? 0;
         const pt = layer.getLatLng();
 
@@ -307,7 +346,7 @@ async function loadStationsGeoJSON() {
           pmSum += Number(pmVal);
           pmCount++;
         }
-        layer.bindTooltip(`<b>Station Point</b><br>PM2.5: ${pmVal} µg/m³`);
+        layer.bindTooltip(`<b>Station Point</b><br>PM2.5: ${pmVal.toFixed(1)} µg/m³`);
       }
     }).addTo(map);
 
@@ -455,11 +494,23 @@ function renderHealthImpacts() {
 
   const deathRateEl = document.getElementById('deathRate');
   const pop25El = document.getElementById('pop25');
-  const vslEl = document.getElementById('vsl');
+  const gdpEl = document.getElementById('gdp');
+  const gdpRefEl = document.getElementById('gdpRef');
+  const vslRefEl = document.getElementById('vslRef') || document.getElementById('vsl');
+  const elasticityEl = document.getElementById('elasticity');
 
   const baselineDeathRate = deathRateEl ? parseFloat(deathRateEl.value) || 6.6 : 6.6;
   const frac25 = pop25El ? (parseFloat(pop25El.value) || 70) / 100 : 0.70;
-  const vsl = vslEl ? parseFloat(vslEl.value) || 0 : 0;
+
+  // Read economic inputs from DOM
+  const gdp = gdpEl ? parseFloat(gdpEl.value) || 0 : 0;
+  const gdpRef = gdpRefEl ? parseFloat(gdpRefEl.value) || 1 : 1;
+  const vslRef = vslRefEl ? parseFloat(vslRefEl.value) || 0 : 0;
+  const elasticity = elasticityEl ? parseFloat(elasticityEl.value) || 0 : 0;
+
+  // GDP correction factor and adjusted VSL calculation
+  const gdpCorrection = (gdp > 0 && gdpRef > 0) ? Math.pow(gdp / gdpRef, elasticity) : 1;
+  const VSL = vslRef * gdpCorrection;
 
   const bbox = { swLng: activeBounds.getWest(), swLat: activeBounds.getSouth(), neLng: activeBounds.getEast(), neLat: activeBounds.getNorth() };
   const cells = computeGrid01(bbox);
@@ -474,7 +525,7 @@ function renderHealthImpacts() {
     }
   });
 
-  const totalCost = totalMortality * vsl;
+  const totalCost = totalMortality * VSL;
 
   // Compute Box Area
   const lat1 = bbox.swLat * Math.PI / 180;
@@ -488,18 +539,18 @@ function renderHealthImpacts() {
   updateText('stat-avg-pm25', `${stationAvgPm25.toFixed(1)} µg/m³`);
 
   // Animate mortality count and cost over 1 hour (3600000 ms)
-  animateCounter('totalMortalityCount', totalMortality/(365*24), 3600000, false);
-  animateCounter('totalMortalityCost', totalCost/(365*24), 3600000, true);
+  animateCounter('totalMortalityCount', totalMortality / (365 * 24), 3600000, false);
+  animateCounter('totalMortalityCost', totalCost / (365 * 24), 3600000, true);
 
-  // Morbidity
-  const { morbidityCostUSD, breakdown } = calculateMorbidity(totalPop, frac25);
+  // Morbidity with GDP scaling
+  const { morbidityCostUSD, breakdown } = calculateMorbidity(totalPop, frac25, gdpCorrection);
   updateText('totalMorbidityCost', fmtMoney(morbidityCostUSD));
   updateText('totalCombinedCost', fmtMoney(totalCost + morbidityCostUSD));
 
   // Save state for CSV download
   lastBoxResults = {
     areaKm2, totalPop, avgBoxPm: stationAvgPm25,
-    baselineDeathRate, frac25: frac25 * 100, vsl,
+    baselineDeathRate, frac25: frac25 * 100, vsl: VSL, gdpCorrection,
     totalMortality, totalMortalityCostUSD: totalCost,
     morbidityCostUSD, combinedCostUSD: totalCost + morbidityCostUSD,
     breakdown
@@ -525,7 +576,7 @@ function buildMorbidityRows() {
   `).join('');
 }
 
-function calculateMorbidity(totalPop, frac25) {
+function calculateMorbidity(totalPop, frac25, gdpCorrection = 1) {
   const popAdult = totalPop * frac25;
   const popUnder25 = totalPop - popAdult;
   const popByBase = { all: totalPop, adult: popAdult, under25: popUnder25 };
@@ -535,7 +586,7 @@ function calculateMorbidity(totalPop, frac25) {
   EFFECTS.forEach((eff, i) => {
     const basePop = popByBase[eff.base];
     const cases = eff.drf * basePop;
-    const costUSD = cases * eff.cost;
+    const costUSD = cases * eff.cost * gdpCorrection;
     morbidityCostUSD += costUSD;
     breakdown.push({ acr: eff.acr, name: eff.name, cases, costUSD });
     updateText(`morb-cases-${i}`, Math.round(cases).toLocaleString('en-US'));
@@ -555,7 +606,7 @@ document.getElementById('morbidity-toggle')?.addEventListener('click', function(
 
 buildMorbidityRows();
 
-['deathRate', 'pop25', 'vsl'].forEach(id => {
+['deathRate', 'pop25', 'gdp', 'gdpRef', 'vslRef', 'vsl', 'elasticity'].forEach(id => {
   document.getElementById(id)?.addEventListener('input', function() {
     if (activeBounds) renderHealthImpacts();
   });
@@ -570,7 +621,8 @@ function buildBoxResultsCsv(r) {
     ['Station Average PM2.5 (ug/m3)', r.avgBoxPm.toFixed(2)],
     ['Baseline Death Rate (per 1000)', r.baselineDeathRate],
     ['Population Aged 25+ (%)', r.frac25.toFixed(1)],
-    ['Value of Statistical Life (USD)', r.vsl],
+    ['GDP Correction Factor', r.gdpCorrection.toFixed(4)],
+    ['Adjusted VSL (USD)', r.vsl.toFixed(2)],
     [''],
     ['Estimated Mortality (cases/yr)', r.totalMortality.toFixed(2)],
     ['Cost of Mortality (USD)', r.totalMortalityCostUSD.toFixed(2)],
